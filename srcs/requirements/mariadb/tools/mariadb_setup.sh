@@ -5,19 +5,20 @@ set -e
 MYSQL_PASSWORD=$(cat "$MYSQL_PASSWORD_FILE")
 MYSQL_ROOT_PASSWORD=$(cat "$MYSQL_ROOT_PASSWORD_FILE")
 
-# Only run setup if this is the FIRST time (database folder doesn't exist yet)
+# Step 1: install MariaDB's own system tables, if not already done
 if [ ! -d "/var/lib/mysql/mysql" ]; then
     mysql_install_db --user=mysql --datadir=/var/lib/mysql
+fi
 
-    # Start MariaDB quietly in the background, just to run setup commands
+# Step 2: create OUR database/user, if not already done (separate check)
+if [ ! -d "/var/lib/mysql/${MYSQL_DATABASE}" ]; then
     mysqld_safe --datadir=/var/lib/mysql --skip-networking &
+    pid=$!
 
-    # Wait until it's actually ready to accept commands
     until mysqladmin ping --silent 2>/dev/null; do
         sleep 1
     done
 
-    # Create the database, a regular user, and set the root password
     mysql -u root <<-EOSQL
         CREATE DATABASE IF NOT EXISTS ${MYSQL_DATABASE};
         CREATE USER IF NOT EXISTS '${MYSQL_USER}'@'%' IDENTIFIED BY '${MYSQL_PASSWORD}';
@@ -26,9 +27,9 @@ if [ ! -d "/var/lib/mysql/mysql" ]; then
         FLUSH PRIVILEGES;
 EOSQL
 
-    # Shut down the temporary instance we used just for setup
     mysqladmin -u root -p"${MYSQL_ROOT_PASSWORD}" shutdown
+    wait $pid
 fi
 
-# Start MariaDB "for real" — in the foreground, so the container stays alive properly
+# Step 3: start MariaDB "for real" — in the foreground, so the container stays alive properly
 exec mysqld_safe --datadir=/var/lib/mysql
