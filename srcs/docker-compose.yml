@@ -37,6 +37,21 @@ services:
     networks:
       - inception
     restart: always
+  nginx:
+    build: ./requirements/nginx
+    image: nginx
+    container_name: nginx
+    env_file:
+      - .env
+    depends_on:
+      - wordpress
+    ports:
+      - "443:443"
+    volumes:
+      - wordpress:/var/www/html
+    networks:
+      - inception
+    restart: always
 
 
 secrets:
