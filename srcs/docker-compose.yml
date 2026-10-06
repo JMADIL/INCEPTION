@@ -69,7 +69,7 @@ volumes:
     driver: local
     driver_opts:
       type: none
-      device: /home/ajamoun/data/db
+      device: /home/ajamoun/data/mariadb
       o: bind
   wordpress:
     driver: local
