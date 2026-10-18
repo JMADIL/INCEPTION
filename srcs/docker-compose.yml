@@ -16,6 +16,7 @@ services:
     networks:
       - inception
     restart: always
+
   wordpress:
     build: ./requirements/wordpress
     image: wordpress
