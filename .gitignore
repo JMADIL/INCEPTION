@@ -1,3 +1,11 @@
+# Local environment settings; sanitized examples can be committed.
 .env
-.gitignore
+.env.*
+!.env.example
+
+# Local password files mounted by Docker Compose.
 secrets/
+
+# Kept as an educational example: ignore rules do not affect tracked files.
+# This file remains visible because it is already tracked by Git.
+.gitignore
