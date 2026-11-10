@@ -1,59 +1,93 @@
-*This project has been created as part of the 42 curriculum by ajamoun.*
-
 # Inception
 
-## Description
+*A system administration project from the 42 curriculum, by ajamoun.*
 
-Inception is a system administration project that sets up a small web infrastructure using Docker. It builds three custom Docker images — NGINX, WordPress with PHP-FPM, and MariaDB — each running in its own container, wired together with Docker Compose. The goal is to learn how to containerize services properly instead of relying on ready-made images, and to understand core concepts like volumes, networks, and secrets management.
+Inception runs a WordPress website using three containers built from custom Dockerfiles: NGINX, WordPress with PHP-FPM, and MariaDB. Docker Compose connects the services, mounts their persistent storage, and provides passwords through secret files.
 
-## Instructions
+The project explores how a web server, an application, and a database work together, while practicing Docker images, networking, volumes, TLS, and service initialization.
 
-### Requirements
+## Architecture
 
-- Docker and Docker Compose installed
-- A `secrets/` folder at the project root containing the required password files (see `DEV_DOC.md`)
+```mermaid
+flowchart TD
+    browser["Browser"]
 
-### Setup
+    subgraph network["Docker network: inception"]
+        nginx["NGINX<br/>HTTPS entry point"]
+        wordpress["WordPress + PHP-FPM<br/>Application"]
+        mariadb["MariaDB<br/>Database"]
 
-1. Clone the repository
-2. Add `ajamoun.42.fr` to `/etc/hosts`, pointing at `127.0.0.1`
-3. Create the secret files in `secrets/` (see `DEV_DOC.md`)
-4. Run `make` from the project root
+        nginx -->|"FastCGI · port 9000"| wordpress
+        wordpress -->|"SQL · port 3306"| mariadb
+    end
 
-### Usage
+    browser -->|"HTTPS · port 443"| nginx
 
-Visit `https://ajamoun.42.fr` in a browser (accept the self-signed certificate warning).
+    files[("WordPress files<br/>Shared volume")]
+    database[("Database files<br/>MariaDB volume")]
+    secrets["Local password files"]
 
-See `USER_DOC.md` and `DEV_DOC.md` for full details.
+    nginx -->|"Serves static files"| files
+    wordpress -->|"Installs and manages files"| files
+    mariadb -->|"Stores data"| database
+    secrets -.->|"Mounted under /run/secrets"| wordpress
+    secrets -.->|"Mounted under /run/secrets"| mariadb
+```
 
-## Resources
+1. **NGINX** receives HTTPS requests on port 443 using a self-signed certificate. It serves static files and forwards PHP requests to WordPress over FastCGI.
+2. **WordPress with PHP-FPM** runs the application. Its startup script waits for MariaDB, downloads and configures WordPress on first setup, and creates an administrator and an author account using WP-CLI.
+3. **MariaDB** stores the site's content and user accounts. Its startup script initializes the database and database user when needed.
 
-- Docker documentation: https://docs.docker.com
-- Docker Compose documentation: https://docs.docker.com/compose
-- WordPress CLI (wp-cli): https://wp-cli.org
-- MariaDB documentation: https://mariadb.com/kb/en/documentation
-- NGINX documentation: https://nginx.org/en/docs
+Only NGINX publishes a port to the host. WordPress and MariaDB communicate through the Compose network using their service names.
 
-**AI usage**: AI was used only as a learning aid, to understand the underlying concepts more clearly (Docker images, layers and containers, volumes and bind mounts, networks and container DNS, secrets, Docker Compose, PHP-FPM, NGINX and TLS). The project's files were written, tested and debugged by me, and I can explain every part of them.
+## Storage and configuration
 
-## Project description
+The `wordpress` volume is shared by NGINX and WordPress at `/var/www/html`. The `mariadb` volume stores database files at `/var/lib/mysql`. Both volumes bind to host directories under `/home/ajamoun/data`, so the files persist when containers are recreated.
 
-### Docker and the project's sources
+Non-secret settings live in `srcs/.env`. Passwords live in the root `secrets/` directory and are mounted into the containers that need them. Both paths are ignored by Git.
 
-Each service (NGINX, WordPress+PHP-FPM, MariaDB) is built from its own Dockerfile, based on the penultimate stable version of Debian. No ready-made service images are pulled — only the base OS image comes from Docker Hub. Configuration files and startup scripts for each service live under `srcs/requirements/<service>/`.
+NGINX generates its TLS certificate and private key inside its container when they are missing.
 
-### Virtual Machines vs Docker
+## Project structure
 
-A virtual machine virtualizes an entire computer, including its own kernel, which makes it heavier and slower to start. A Docker container shares the host machine's kernel and only isolates the application and its dependencies, making it much lighter and faster to start, while still keeping services separated from each other.
+```text
+.
+├── Makefile
+├── README.md
+└── srcs/
+    ├── docker-compose.yml
+    └── requirements/
+        ├── mariadb/
+        ├── nginx/
+        └── wordpress/
+```
 
-### Secrets vs Environment Variables
+Each service directory contains its Dockerfile, configuration, and startup script. All three images use `debian:bookworm` as their base.
 
-Environment variables are visible to anyone who can inspect the container (e.g. `docker inspect`), which makes them unsuitable for passwords. Docker secrets are mounted as files inside the container at runtime and are not stored as plain container metadata, which is safer for confidential information like database passwords.
+## Running locally
 
-### Docker Network vs Host Network
+Install Docker, Docker Compose, and Make. Create `srcs/.env` with:
 
-With `network: host`, a container shares the host's network stack directly, which removes isolation and can create port conflicts. A custom Docker network keeps containers isolated on their own private network, lets them find each other by name through Docker's built-in DNS, and only exposes the ports that are explicitly published.
+```dotenv
+DOMAIN_NAME=ajamoun.42.fr
+MYSQL_DATABASE=wordpress
+MYSQL_USER=wpuser
+WP_TITLE=Inception
+WP_ADMIN_USER=siteowner
+WP_ADMIN_EMAIL=admin@example.com
+WP_USER=author
+WP_USER_EMAIL=author@example.com
+```
 
-### Docker Volumes vs Bind Mounts
+Create a `secrets/` directory at the repository root with these files, each containing its own password:
 
-A bind mount links a container path directly to a specific folder on the host, chosen and managed by the user. A named volume is managed by Docker itself, making it more portable and safer, while still using `driver_opts` to force the folder where the data physically lives when required — as done in this project, under `/home/ajamoun/data`.
+- `db_password.txt`
+- `db_root_password.txt`
+- `wp_admin_password.txt`
+- `wp_user_password.txt`
+
+The current configuration uses `ajamoun.42.fr` and `/home/ajamoun/data`. On another machine, update the domain in the configuration and Makefile, and align the volume paths in `srcs/docker-compose.yml` with the data directory created by the Makefile.
+
+Run `make` to create the data directories, add the local hostname to `/etc/hosts` using sudo if needed, and build and start the containers. Open `https://ajamoun.42.fr` and accept the local self-signed certificate. The administration page is available at `/wp-admin`.
+
+Run `make down` to stop and remove the containers. The data remains in the host directories.
